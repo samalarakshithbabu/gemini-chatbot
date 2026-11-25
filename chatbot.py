@@ -2,9 +2,10 @@ from dotenv import load_dotenv
 import streamlit as st
 import os
 import google.generativeai as genai
+import time
 
 # Load environment variables
-load_dotenv() 
+load_dotenv()
 
 # Configure Google Generative AI with the API key from .env
 api_key = os.getenv("GOOGLE_API_KEY")
@@ -32,24 +33,39 @@ st.header("Gemini LLM Application")
 if 'chat_history' not in st.session_state:
     st.session_state['chat_history'] = []
 
+# Rate limiting (basic client-session protection, NOT production-grade)
+RATE_LIMIT_SECONDS = 3
+if 'last_request_time' not in st.session_state:
+    st.session_state['last_request_time'] = 0
+
 # Input box for user query
+MAX_INPUT_LENGTH = 5000
 user_input = st.text_input("Ask a question:", key="input")
 submit = st.button("Ask")
 
 if submit and user_input:
-    response = get_gemini_response(user_input)
-    if response:
-        # Add user query and response to session state chat history
-        st.session_state['chat_history'].append(("You", user_input))
-        st.subheader("The Response is:")
-        for chunk in response:
-            st.write(chunk.text)
-            st.session_state['chat_history'].append(("Bot", chunk.text))
+    user_input = user_input.strip()
+    now = time.time()
+    if now - st.session_state['last_request_time'] < RATE_LIMIT_SECONDS:
+        st.warning(f"Please wait {RATE_LIMIT_SECONDS} seconds between requests.")
+    elif not user_input:
+        st.warning("Please enter a question.")
+    elif len(user_input) > MAX_INPUT_LENGTH:
+        st.warning(f"Input too long. Maximum {MAX_INPUT_LENGTH} characters.")
     else:
-        st.error("No response from the Gemini AI.")
+        st.session_state['last_request_time'] = now
+        response = get_gemini_response(user_input)
+        if response:
+            # Add user query and response to session state chat history
+            st.session_state['chat_history'].append(("You", user_input))
+            st.subheader("The Response is:")
+            for chunk in response:
+                st.write(chunk.text)
+                st.session_state['chat_history'].append(("Bot", chunk.text))
+        else:
+            st.error("No response from the Gemini AI.")
 
 # Display chat history
 st.subheader("Chat History:")
 for role, text in st.session_state['chat_history']:
     st.write(f"**{role}:** {text}")
-    
